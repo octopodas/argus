@@ -1,4 +1,6 @@
-# Activity Tracker
+# Argus
+
+*The hundred-eyed watchman — never all eyes closed at once.*
 
 Local, private activity tracker for Linux/X11. Tracks keyboard/mouse activity,
 camera-based wellbeing signals (MediaPipe FaceLandmarker), and per-app time;

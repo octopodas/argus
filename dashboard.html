@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Activity Tracker</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23181b22'/%3E%3Cpolyline points='6,38 20,38 27,16 35,52 42,28 47,38 58,38' fill='none' stroke='%234cc38a' stroke-width='6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --ink:#e6e9ef; --dim:#8b93a3; --acc:#5aa9e6; --ok:#4cc38a; --warn:#e6b450; --bad:#e05d5d; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; padding:24px; max-width:960px; margin:0 auto; }
+  header { display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  h1 { font-size:20px; }
+  .datenav { display:flex; align-items:center; gap:6px; }
+  .datenav button { padding:2px 10px; font-size:16px; }
+  #date { font-weight:600; min-width:100px; text-align:center; }
+  #fresh { color:var(--dim); font-size:12px; margin-left:auto; }
+  #camtoggle { display:flex; align-items:center; gap:6px; align-self:center;
+    background:none; border:1px solid #2a2f3a; border-radius:8px;
+    padding:4px 10px; cursor:pointer; color:var(--dim); font-size:12px; }
+  #camtoggle svg { fill:var(--dim); }
+  #camtoggle svg .slash { stroke:var(--bad); stroke-width:2.5; }
+  #camtoggle.on { border-color:var(--bad); color:var(--bad); }
+  #camtoggle.on svg { fill:var(--bad); }
+  #camtoggle.on svg .slash { display:none; }
+  #camtoggle.on svg { animation:pulse 2s infinite; }
+  #fresh .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:5px; animation:pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:20px; }
+  .card { background:var(--card); border-radius:10px; padding:14px 16px; }
+  .card .v { font-size:26px; font-weight:600; }
+  .card .l { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .card .d { color:var(--dim); font-size:12px; margin-top:2px; }
+  section { background:var(--card); border-radius:10px; padding:16px; margin-bottom:16px; }
+  section h2 { font-size:14px; color:var(--dim); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px; }
+  canvas { width:100%; display:block; }
+  .legend { color:var(--dim); font-size:12px; margin-top:6px; }
+  .apps div { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:14px; }
+  .apps .bar { height:8px; background:var(--acc); border-radius:4px; }
+  .apps .name { min-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .apps .sec { color:var(--dim); font-size:12px; }
+  label { display:flex; align-items:center; gap:8px; margin:6px 0; color:var(--dim); font-size:14px; }
+  input[type=number] { width:70px; background:var(--bg); border:1px solid #2a2f3a; color:var(--ink); border-radius:6px; padding:4px 8px; }
+  button { background:var(--acc); border:0; color:#08131d; font-weight:600; border-radius:8px; padding:8px 14px; cursor:pointer; }
+  button:disabled { opacity:.5; }
+  #analysis, #insights { font-size:14px; }
+  #analysis p, #insights p { margin:8px 0; }
+  #analysis ul, #insights ul, #analysis ol, #insights ol { margin:8px 0; padding-left:22px; }
+  #analysis li, #insights li { margin:4px 0; }
+  #analysis h3, #insights h3 { font-size:14px; color:var(--acc); margin:14px 0 4px; }
+  #analysis code, #insights code { background:var(--bg); border-radius:4px; padding:1px 5px; font-size:13px; }
+  .model { color:var(--dim); font-size:12px; margin-top:8px; }
+  .row { display:flex; gap:16px; flex-wrap:wrap; }
+  .row > * { flex:1; min-width:280px; }
+  #histwrap { position:relative; }
+  #histtip { position:absolute; top:0; left:0; background:#000c; border-radius:6px; padding:6px 10px; font-size:12px; pointer-events:none; display:none; white-space:nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Activity Tracker</h1>
+  <div class="datenav">
+    <button onclick="shiftDay(-1)">‹</button>
+    <span id="date"></span>
+    <button onclick="shiftDay(1)">›</button>
+  </div>
+  <button id="camtoggle" onclick="toggleCam()">
+    <svg width="22" height="22" viewBox="0 0 24 24">
+      <path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/>
+      <line class="slash" x1="2" y1="2" x2="22" y2="22"/>
+    </svg><span id="camlabel"></span>
+  </button>
+  <span id="fresh"><span class="dot"></span><span id="freshtxt">loading…</span></span>
+</header>
+
+<div class="grid" id="tiles"></div>
+
+<section>
+  <h2>Last 14 days</h2>
+  <div id="histwrap">
+    <canvas id="histchart" height="90"></canvas>
+    <div id="histtip"></div>
+  </div>
+  <div class="legend">bar = active time · bar color = stress level (<span style="color:var(--ok)">calm</span> → <span style="color:var(--bad)">stressed</span>) · <span style="color:var(--acc)">line</span> = focus % · click a day to inspect it</div>
+</section>
+
+<section>
+  <h2>Activity timeline (per minute)</h2>
+  <div id="tlwrap" style="position:relative">
+    <canvas id="timeline" height="86"></canvas>
+    <div id="tltip" style="position:absolute;top:0;left:0;background:#000c;border-radius:6px;padding:6px 10px;font-size:12px;pointer-events:none;display:none;white-space:nowrap"></div>
+  </div>
+  <div class="legend">
+    bar height = input intensity · <span style="color:var(--ok)">green</span> present at screen ·
+    <span style="color:var(--warn)">amber</span> input without camera presence ·
+    <span style="color:var(--acc)">blue</span> away from computer ·
+    <span style="color:var(--bad)">red top dot</span> facial tension spike ·
+    <span style="color:#b07cc6">violet top dot</span> chewing gum ·
+    scroll = zoom, drag = pan, double-click = reset</div>
+</section>
+
+<section>
+  <h2>Analysis <span style="text-transform:none;letter-spacing:0">(auto-updates)</span></h2>
+  <div id="analysis"></div>
+</section>
+
+<div class="row">
+<section>
+  <h2>Top apps</h2>
+  <div class="apps" id="apps"></div>
+</section>
+
+<section>
+  <h2>Settings</h2>
+  <label>Break reminder every <input type="number" id="break_every_min" min="10"> min</label>
+  <label>Re-remind (snooze) <input type="number" id="snooze_min" min="1"> min</label>
+  <label><input type="checkbox" id="camera_enabled"> Camera signals enabled</label>
+  <label><input type="checkbox" id="notify"> Desktop notifications</label>
+  <button onclick="saveCfg()">Save</button> <span id="saved" style="color:var(--ok)"></span>
+</section>
+</div>
+
+<section>
+  <h2>AI insights</h2>
+  <button id="insBtn" onclick="getInsights()">Analyze this day with LLM</button>
+  <div id="insights"></div>
+  <div class="model" id="insModel"></div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// minimal markdown -> html (escaped first, so LLM output can't inject)
+function md(text) {
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inline = s => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  const out = [];
+  let list = null;   // 'ul' | 'ol' | null
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const h = line.match(/^#{1,4}\s+(.*)/);
+    const ul = line.match(/^[-*•]\s+(.*)/);
+    const ol = line.match(/^\d+[.)]\s+(.*)/);
+    if (h) { closeList(); out.push(`<h3>${inline(h[1])}</h3>`); }
+    else if (ul || ol) {
+      const kind = ul ? 'ul' : 'ol';
+      if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; }
+      out.push(`<li>${inline((ul || ol)[1])}</li>`);
+    }
+    else if (!line) closeList();
+    else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join('');
+}
+const fmtMin = m => m >= 60 ? `${Math.floor(m/60)}h ${m%60}m` : `${m}m`;
+const gaugeColor = v => v < 40 ? 'var(--ok)' : v < 70 ? 'var(--warn)' : 'var(--bad)';
+const today = () => new Date().toLocaleDateString('sv');  // YYYY-MM-DD local
+let viewDate = today();
+let hist = [];
+let lastFetch = 0;
+
+function shiftDay(d) {
+  const dt = new Date(viewDate + 'T12:00:00');
+  dt.setDate(dt.getDate() + d);
+  if (dt > new Date()) return;
+  viewDate = dt.toLocaleDateString('sv');
+  load();
+}
+
+async function load() {
+  const [s, h] = await Promise.all([
+    (await fetch('/api/summary?date=' + viewDate)).json(),
+    (await fetch('/api/history')).json(),
+  ]);
+  hist = h;
+  lastFetch = Date.now();
+  $('date').textContent = viewDate === today() ? 'today' : viewDate;
+  const t = s.totals;
+  // tile value colors mirror the activity-timeline palette
+  const tiles = [
+    ['Active time', fmtMin(t.active_min), `${fmtMin(t.present_min)} on camera`, 'var(--ok)'],
+    ['Away time', fmtMin(t.away_min ?? 0), `within ${fmtMin(t.span_min ?? 0)} workday span`, 'var(--acc)'],
+    ['Focus', s.focus.score + '%', 'low-switching active minutes'],
+    ['Stress index', s.stress.score, topDriver(s.stress.components), gaugeColor(s.stress.score)],
+    ['Blink rate', (s.stress.components.blinks_per_min ?? 0) + '/min', 'normal 15–20'],
+    ['Keystrokes', t.keys.toLocaleString(), `${t.clicks.toLocaleString()} clicks · ${t.mouse_m}m mouse`],
+    ['Longest streak', fmtMin(t.longest_streak_min), `${t.breaks_taken} breaks · ${t.reminders} reminders`],
+    ['Eye rubs', t.eye_rubs ?? 0, 'glasses-off face rubs (strain sign)', 'var(--bad)'],
+    ['Chewing gum', fmtMin(t.chew_min ?? 0), 'minutes with rhythmic jaw motion', '#b07cc6'],
+  ];
+  $('tiles').innerHTML = tiles.map(([l,v,d,c]) =>
+    `<div class="card"><div class="l">${l}</div><div class="v"${c?` style="color:${c}"`:''}>${v}</div><div class="d">${d}</div></div>`).join('');
+  drawTimeline(s.minutes);
+  drawHistory();
+  $('analysis').innerHTML = md(s.analysis);
+  const max = Math.max(1, ...(s.apps.map(a => a[1])));
+  $('apps').innerHTML = s.apps.map(([name,sec]) =>
+    `<div><span class="name">${name}</span><span class="bar" style="width:${100*sec/max}%;max-width:50%"></span><span class="sec">${fmtMin(Math.round(sec/60))}</span></div>`).join('') || '<span class="sec">no data yet</span>';
+}
+
+function topDriver(c) {
+  const parts = {tension:'face tension', blink_dev:'blink deviation', correction:'corrections', burstiness:'burstiness'};
+  let best = null;
+  for (const k in parts) if (!best || c[k] > c[best]) best = k;
+  return best && c[best] > 0 ? 'driver: ' + parts[best] : 'no signal yet';
+}
+
+function drawHistory() {
+  const cv = $('histchart'), ctx = cv.getContext('2d');
+  cv.width = cv.clientWidth;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if (!hist.length) return;
+  const n = hist.length, bw = cv.width / n;
+  const maxAct = Math.max(60, ...hist.map(d => d.active_min));
+  hist.forEach((d, i) => {
+    const h = Math.max(3, (d.active_min / maxAct) * (cv.height - 20));
+    const s = d.stress / 100;
+    ctx.fillStyle = d.date === viewDate ? '#fff'
+      : `rgb(${Math.round(76+s*148)},${Math.round(195-s*102)},${Math.round(138-s*45)})`;
+    ctx.fillRect(i*bw + 3, cv.height - h, bw - 6, h);
+  });
+  ctx.strokeStyle = '#5aa9e6'; ctx.lineWidth = 2; ctx.beginPath();
+  hist.forEach((d, i) => {
+    const y = cv.height - 20 - (d.focus / 100) * (cv.height - 25);
+    i ? ctx.lineTo(i*bw + bw/2, y) : ctx.moveTo(bw/2, y);
+  });
+  ctx.stroke();
+}
+
+$('histchart').onclick = e => {
+  const i = Math.floor(e.offsetX / ($('histchart').clientWidth / hist.length));
+  if (hist[i]) { viewDate = hist[i].date; load(); }
+};
+$('histchart').onmousemove = e => {
+  const cv = $('histchart'), tip = $('histtip');
+  const i = Math.floor(e.offsetX / (cv.clientWidth / hist.length));
+  const d = hist[i];
+  if (!d) { tip.style.display = 'none'; return; }
+  tip.textContent = `${d.date} · active ${fmtMin(d.active_min)} · focus ${d.focus}% · stress ${d.stress}` + (d.top_app ? ` · ${d.top_app}` : '');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.offsetX, cv.clientWidth - 320) + 'px';
+};
+$('histchart').onmouseleave = () => $('histtip').style.display = 'none';
+
+let tlMins = [], tlStart = 0, tlEnd = 1440;   // visible window, minutes of day
+const AXIS = 14;                               // px reserved for time labels
+
+function drawTimeline(mins) {
+  tlMins = mins;
+  const cv = $('timeline'), ctx = cv.getContext('2d');
+  cv.width = cv.clientWidth;
+  ctx.clearRect(0,0,cv.width,cv.height);
+  const dayStart = new Date(viewDate + 'T00:00:00').getTime() / 1000;
+  const span = tlEnd - tlStart;
+  const w = cv.width / span;
+  const plotH = cv.height - AXIS;
+  const style = getComputedStyle(document.documentElement);
+  const actTs = mins.filter(m => m.active).map(m => m.ts);
+  const firstAct = Math.min(...actTs), lastAct = Math.max(...actTs);
+  for (const m of mins) {
+    const mod = (m.ts - dayStart) / 60;
+    if (mod < tlStart - 1 || mod > tlEnd) continue;
+    const x = (mod - tlStart) * w;
+    const intensity = Math.min(1, (m.keys + m.clicks*2) / 120);
+    const away = !m.active && m.ts >= firstAct && m.ts <= lastAct;
+    const h = m.active ? 12 + intensity * (plotH - 18) : away ? 8 : 4;
+    ctx.fillStyle = m.present > 0.5 ? style.getPropertyValue('--ok')
+                  : m.active ? style.getPropertyValue('--warn')
+                  : away ? style.getPropertyValue('--acc') : '#2a2f3a';
+    ctx.fillRect(x, plotH - h, Math.max(1, w - (w > 3 ? 1 : 0)), h);
+    if (m.tension > 0.35) {
+      ctx.fillStyle = style.getPropertyValue('--bad');
+      ctx.fillRect(x, 0, Math.max(1, w), 4);
+    }
+    if (m.chew) {
+      ctx.fillStyle = '#b07cc6';
+      ctx.fillRect(x, 5, Math.max(1, w), 4);
+    }
+  }
+  // adaptive time axis
+  const step = [15, 30, 60, 120, 180, 360].find(s => span / s <= 12) || 360;
+  ctx.fillStyle = '#8b93a3'; ctx.font = '10px system-ui';
+  for (let t = Math.ceil(tlStart / step) * step; t <= tlEnd; t += step) {
+    const x = (t - tlStart) * w;
+    ctx.fillRect(x, plotH, 1, 3);
+    ctx.fillText(`${String(Math.floor(t/60)).padStart(2,'0')}:${String(t%60).padStart(2,'0')}`,
+                 Math.min(x + 2, cv.width - 32), cv.height - 2);
+  }
+}
+
+// zoom (wheel), pan (drag), reset (double-click), tooltip (hover)
+const tlcv = $('timeline');
+tlcv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const span = tlEnd - tlStart;
+  const anchor = tlStart + (e.offsetX / tlcv.clientWidth) * span;
+  const f = e.deltaY < 0 ? 1/1.25 : 1.25;
+  const ns = Math.max(30, Math.min(1440, span * f));
+  tlStart = Math.max(0, anchor - (anchor - tlStart) * ns / span);
+  tlEnd = Math.min(1440, tlStart + ns);
+  tlStart = tlEnd - ns < 0 ? 0 : tlEnd - ns;
+  drawTimeline(tlMins);
+}, {passive: false});
+let tlDrag = null;
+tlcv.onmousedown = e => tlDrag = e.offsetX;
+window.addEventListener('mouseup', () => tlDrag = null);
+tlcv.ondblclick = () => { tlStart = 0; tlEnd = 1440; drawTimeline(tlMins); };
+tlcv.onmousemove = e => {
+  const span = tlEnd - tlStart;
+  if (tlDrag !== null) {
+    const dx = (tlDrag - e.offsetX) * span / tlcv.clientWidth;
+    tlStart = Math.max(0, Math.min(1440 - span, tlStart + dx));
+    tlEnd = tlStart + span;
+    tlDrag = e.offsetX;
+    drawTimeline(tlMins);
+    return;
+  }
+  const tip = $('tltip');
+  const mod = Math.floor(tlStart + (e.offsetX / tlcv.clientWidth) * span);
+  const dayStart = new Date(viewDate + 'T00:00:00').getTime() / 1000;
+  const m = tlMins.find(x => (x.ts - dayStart) / 60 === mod);
+  if (!m) { tip.style.display = 'none'; return; }
+  const state = m.active ? (m.present > 0.5 ? 'active' : 'active (no camera)') : 'away/idle';
+  tip.textContent = `${String(Math.floor(mod/60)).padStart(2,'0')}:${String(mod%60).padStart(2,'0')} · ${state} · ${m.keys} keys · ${m.clicks} clicks` + (m.tension > 0.35 ? ' · tension!' : '') + (m.chew ? ' · chewing' : '');
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.offsetX, tlcv.clientWidth - 300) + 'px';
+};
+tlcv.onmouseleave = () => { $('tltip').style.display = 'none'; tlDrag = null; };
+
+async function loadCfg() {
+  const c = await (await fetch('/api/config')).json();
+  for (const k of ['break_every_min','snooze_min']) $(k).value = c[k];
+  for (const k of ['camera_enabled','notify']) $(k).checked = c[k];
+  camOn = c.camera_enabled; renderCam();
+}
+let camOn = true;
+function renderCam() {
+  $('camtoggle').classList.toggle('on', !!camOn);
+  $('camlabel').textContent = camOn ? 'camera ON' : 'camera off';
+  $('camtoggle').title = camOn
+    ? 'Camera is live — click to release it for video calls'
+    : 'Camera released (free for calls) — click to re-enable tracking';
+}
+async function toggleCam() {
+  camOn = !camOn; renderCam();
+  await fetch('/api/config', {method:'POST', body: JSON.stringify({camera_enabled: camOn})});
+  $('camera_enabled').checked = camOn;
+}
+async function saveCfg() {
+  const body = {
+    break_every_min: +$('break_every_min').value,
+    snooze_min: +$('snooze_min').value,
+    camera_enabled: $('camera_enabled').checked,
+    notify: $('notify').checked,
+  };
+  await fetch('/api/config', {method:'POST', body: JSON.stringify(body)});
+  camOn = body.camera_enabled; renderCam();
+  $('saved').textContent = 'saved ✓';
+  setTimeout(() => $('saved').textContent = '', 2000);
+}
+async function getInsights() {
+  $('insBtn').disabled = true;
+  $('insights').textContent = 'thinking…';
+  try {
+    const r = await (await fetch('/api/insights?date=' + viewDate)).json();
+    $('insights').innerHTML = md(r.text);
+    $('insModel').textContent = 'model: ' + r.model + (r.note ? ' — ' + r.note : '');
+  } finally { $('insBtn').disabled = false; }
+}
+
+load(); loadCfg();
+setInterval(load, 20000);                       // fresh data every 20s
+setInterval(() => {                             // freshness indicator every 1s
+  const s = Math.round((Date.now() - lastFetch) / 1000);
+  $('freshtxt').textContent = lastFetch ? `live · updated ${s}s ago` : 'loading…';
+}, 1000);
+document.addEventListener('visibilitychange', () => !document.hidden && load());
+window.addEventListener('resize', () => { drawHistory(); });
+</script>
+</body>
+</html>

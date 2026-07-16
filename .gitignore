@@ -1,0 +1,5 @@
+activity.db*
+config.json
+tracker.log
+.venv/
+__pycache__/

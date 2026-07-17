@@ -75,8 +75,8 @@ Build/install (once, after KWin upgrades rebuild the same way):
 
 Instant test:
 
-    dbus-send --session --dest=org.argus.blackhole /BlackHole \
-      org.argus.blackhole.setStrength double:0.7
+    dbus-send --session --type=method_call --dest=org.argus.blackhole \
+      /BlackHole org.argus.blackhole.setStrength double:0.7
 
 ## Break reminders
 

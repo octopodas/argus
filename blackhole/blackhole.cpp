@@ -15,9 +15,13 @@ namespace KWin {
 BlackHoleEffect::BlackHoleEffect()
 {
     QDBusConnection bus = QDBusConnection::sessionBus();
-    bus.registerService(QStringLiteral("org.argus.blackhole"));
-    bus.registerObject(QStringLiteral("/BlackHole"), this,
-                       QDBusConnection::ExportScriptableSlots);
+    if (!bus.registerService(QStringLiteral("org.argus.blackhole"))) {
+        qWarning() << "blackhole: DBus registerService failed — tracker cannot reach the effect";
+    }
+    if (!bus.registerObject(QStringLiteral("/BlackHole"), this,
+                            QDBusConnection::ExportScriptableSlots)) {
+        qWarning() << "blackhole: DBus registerObject failed — tracker cannot reach the effect";
+    }
 }
 
 BlackHoleEffect::~BlackHoleEffect()
@@ -52,7 +56,11 @@ void BlackHoleEffect::ensureResources()
     }
     if (!m_shader && !m_shaderFailed) {
         QFile f(QStringLiteral(":/effects/blackhole/blackhole.frag"));
-        f.open(QIODevice::ReadOnly);
+        if (!f.open(QIODevice::ReadOnly)) {
+            qWarning() << "blackhole: blackhole.frag resource missing";
+            m_shaderFailed = true;
+            return;
+        }
         m_shader = ShaderManager::instance()->generateCustomShader(
             ShaderTrait::MapTexture, QByteArray(), f.readAll());
         if (!m_shader->isValid()) {

@@ -261,18 +261,23 @@ def blackhole_strength(streak_min, cfg):
     over = streak_min - cfg["break_every_min"]
     return max(0.0, min(1.0, over / max(1, cfg["blackhole_ramp_min"])))
 
+def blackhole_send(s):
+    """Best-effort push of a single strength value to the KWin effect over
+    DBus. Silently a no-op when the effect isn't installed, KWin is
+    restarting, or the send otherwise fails."""
+    try:
+        subprocess.run(
+            ["dbus-send", "--session", "--dest=org.argus.blackhole",
+             "/BlackHole", "org.argus.blackhole.setStrength", f"double:{s:.3f}"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+    except Exception:
+        pass
+
 def blackhole_worker():
     """Push strength to the KWin effect every 10 s over DBus.
     Silently a no-op when the effect isn't installed or KWin is restarting."""
     while not STOP.is_set():
-        s = blackhole_strength(STREAK, CFG)
-        try:
-            subprocess.run(
-                ["dbus-send", "--session", "--dest=org.argus.blackhole",
-                 "/BlackHole", "org.argus.blackhole.setStrength", f"double:{s:.3f}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-        except Exception:
-            pass
+        blackhole_send(blackhole_strength(STREAK, CFG))
         STOP.wait(10)
 
 def log_event(kind, detail=""):
@@ -575,6 +580,7 @@ def selftest():
     assert abs(blackhole_strength(57.5, cfg) - 0.5) < 1e-9
     assert blackhole_strength(80, cfg) == 1.0
     assert blackhole_strength(80, dict(cfg, blackhole_enabled=False)) == 0.0
+    assert blackhole_strength(51, dict(cfg, blackhole_ramp_min=0)) == 1.0
     global DB
     DB = "/tmp/at_selftest.db"
     try:
@@ -598,12 +604,18 @@ def main():
     threading.Thread(target=aggregator, daemon=True).start()
     threading.Thread(target=blackhole_worker, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", CFG["port"]), Handler)
-    signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+
+    def _shutdown(*a):
+        blackhole_send(0.0)
+        STOP.set()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _shutdown)
     print(f"activity tracker running — dashboard: http://localhost:{CFG['port']}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        blackhole_send(0.0)
     STOP.set()
 
 if __name__ == "__main__":

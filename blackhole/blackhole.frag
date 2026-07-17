@@ -4,7 +4,7 @@ uniform sampler2D sampler;   // KWin-provided: the offscreen screen texture
 uniform vec2 u_resolution;   // virtual screen size, px
 uniform vec2 u_center;       // hole center, px, in texcoord0's coordinate space
 uniform float u_radius;      // event-horizon radius, px
-uniform float u_strength;    // 0..1 smoothed strength
+uniform float u_strength;    // 0..3 smoothed strength (>1 only grows the radius)
 uniform float u_time;        // seconds since effect activation
 
 in vec2 texcoord0;
@@ -33,7 +33,8 @@ void main()
     float bend = rs * rs / max(r, 1.0);
 
     // frame dragging: gentle rocking swirl that decays away from the hole
-    float swirl = 1.2 * u_strength * exp(-(r - rs) / (2.0 * rs)) * sin(u_time * 0.35);
+    float vis = clamp(u_strength, 0.0, 1.0); // intensity caps at 1; size keeps growing
+    float swirl = 1.2 * vis * exp(-(r - rs) / (2.0 * rs)) * sin(u_time * 0.35);
     float cs = cos(swirl), sn = sin(swirl);
     vec2 dir = normalize(d);
     dir = vec2(dir.x * cs - dir.y * sn, dir.x * sn + dir.y * cs);
@@ -50,7 +51,7 @@ void main()
     // photon ring hugging the horizon, gently shimmering
     float ring = exp(-pow((r - rs * 1.1) / (rs * 0.18), 2.0));
     float shimmer = 0.85 + 0.15 * sin(u_time * 1.7 + atan(d.y, d.x) * 3.0);
-    col += vec3(1.0, 0.93, 0.78) * ring * shimmer * u_strength;
+    col += vec3(1.0, 0.93, 0.78) * ring * shimmer * vis;
 
     fragColor = vec4(col, 1.0);
 }

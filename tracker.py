@@ -256,12 +256,14 @@ def notify(title, body):
                         title, body], check=False)
 
 def blackhole_strength(streak_min, cfg):
-    """0..1: how far past the break threshold the active streak is.
-    Drives the KWin black-hole effect; 0 = invisible."""
+    """0..3: how far past the break threshold the active streak is, in units
+    of blackhole_ramp_min. Drives the KWin black-hole effect; 0 = invisible,
+    1 = classic full size, then keeps swelling to 3 (screen-devouring) if the
+    break keeps being ignored."""
     if not cfg.get("blackhole_enabled", True):
         return 0.0
     over = streak_min - cfg["break_every_min"]
-    return max(0.0, min(1.0, over / max(1, cfg["blackhole_ramp_min"])))
+    return max(0.0, min(3.0, over / max(1, cfg["blackhole_ramp_min"])))
 
 def blackhole_send(s):
     """Best-effort push of a single strength value to the KWin effect over
@@ -592,7 +594,9 @@ def selftest():
     assert blackhole_strength(0, cfg) == 0.0
     assert blackhole_strength(50, cfg) == 0.0
     assert abs(blackhole_strength(57.5, cfg) - 0.5) < 1e-9
-    assert blackhole_strength(80, cfg) == 1.0
+    assert blackhole_strength(65, cfg) == 1.0
+    assert blackhole_strength(80, cfg) == 2.0
+    assert blackhole_strength(200, cfg) == 3.0
     assert blackhole_strength(80, dict(cfg, blackhole_enabled=False)) == 0.0
     assert blackhole_strength(51, dict(cfg, blackhole_ramp_min=0)) == 1.0
     global DB

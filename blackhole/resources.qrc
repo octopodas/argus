@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/effects/blackhole">
+        <file>blackhole.frag</file>
+    </qresource>
+</RCC>

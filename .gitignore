@@ -3,3 +3,4 @@ config.json
 tracker.log
 .venv/
 __pycache__/
+blackhole/build/

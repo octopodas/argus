@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Id": "blackhole",
+        "Name": "Black Hole",
+        "Description": "Argus overtime black hole — lenses the desktop when you work too long",
+        "Category": "Appearance",
+        "EnabledByDefault": true,
+        "License": "GPL",
+        "ServiceTypes": [
+            "KWin/Effect"
+        ]
+    }
+}

@@ -21,6 +21,8 @@ DEFAULTS = {
     "port": 8787,
     "notify": True,
     "ollama_model": "",         # empty = first available model
+    "blackhole_enabled": True,  # KWin black-hole overtime effect (see blackhole/)
+    "blackhole_ramp_min": 15,   # minutes past break threshold until full size
 }
 
 def load_config():
@@ -250,6 +252,28 @@ def notify(title, body):
     if CFG["notify"]:
         subprocess.run(["notify-send", "-u", "critical", "-a", "ActivityTracker",
                         title, body], check=False)
+
+def blackhole_strength(streak_min, cfg):
+    """0..1: how far past the break threshold the active streak is.
+    Drives the KWin black-hole effect; 0 = invisible."""
+    if not cfg.get("blackhole_enabled", True):
+        return 0.0
+    over = streak_min - cfg["break_every_min"]
+    return max(0.0, min(1.0, over / max(1, cfg["blackhole_ramp_min"])))
+
+def blackhole_worker():
+    """Push strength to the KWin effect every 10 s over DBus.
+    Silently a no-op when the effect isn't installed or KWin is restarting."""
+    while not STOP.is_set():
+        s = blackhole_strength(STREAK, CFG)
+        try:
+            subprocess.run(
+                ["dbus-send", "--session", "--dest=org.argus.blackhole",
+                 "/BlackHole", "org.argus.blackhole.setStrength", f"double:{s:.3f}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        except Exception:
+            pass
+        STOP.wait(10)
 
 def log_event(kind, detail=""):
     with db() as conn:
@@ -545,6 +569,12 @@ def selftest():
     mins2 = [dict(m, switches=6) for m in mins]
     assert focus_score(mins2) == 0
     assert stress_score([])[0] == 0
+    cfg = dict(DEFAULTS, break_every_min=50, blackhole_ramp_min=15)
+    assert blackhole_strength(0, cfg) == 0.0
+    assert blackhole_strength(50, cfg) == 0.0
+    assert abs(blackhole_strength(57.5, cfg) - 0.5) < 1e-9
+    assert blackhole_strength(80, cfg) == 1.0
+    assert blackhole_strength(80, dict(cfg, blackhole_enabled=False)) == 0.0
     global DB
     DB = "/tmp/at_selftest.db"
     try:
@@ -566,6 +596,7 @@ def main():
     threading.Thread(target=camera_worker, daemon=True).start()
     threading.Thread(target=window_worker, daemon=True).start()
     threading.Thread(target=aggregator, daemon=True).start()
+    threading.Thread(target=blackhole_worker, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", CFG["port"]), Handler)
     signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
     print(f"activity tracker running — dashboard: http://localhost:{CFG['port']}")

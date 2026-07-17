@@ -54,10 +54,10 @@ The whole page auto-refreshes every 20 s (and on tab focus); the green
 ## Black hole
 
 When an unbroken active streak runs past `break_every_min`, a black hole
-opens on the main monitor, wandering slowly across it, and grows for the next
-`blackhole_ramp_min` minutes (default 15), gravitationally lensing
-everything on screen — the longer you refuse to take a break, the more of
-your desktop it eats. Take a real break (idle past `idle_reset_min`) and it
+opens on the main monitor, wandering slowly across it, and reaches classic
+full size after `blackhole_ramp_min` minutes (default 15), gravitationally
+lensing everything on screen. Keep ignoring the break and it keeps swelling —
+at 3× ramp (45 min of overtime) it devours most of the monitor. Take a real break (idle past `idle_reset_min`) and it
 collapses. Purely visual: input and windows are untouched.
 
 Implementation: a KWin compositor effect (`blackhole/`) fed by the tracker

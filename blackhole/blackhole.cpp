@@ -39,7 +39,8 @@ bool BlackHoleEffect::supported()
 
 void BlackHoleEffect::setStrength(double strength)
 {
-    m_target = std::clamp(strength, 0.0, 1.0);
+    // 0..1 = normal growth; 1..3 = overtime escalation (size only)
+    m_target = std::clamp(strength, 0.0, 3.0);
     if (m_target > 0.0 || m_rendered > 0.0) {
         effects->addRepaintFull();
     }

@@ -41,6 +41,8 @@ def save_config(cfg):
 CFG = load_config()
 LOCK = threading.Lock()
 STOP = threading.Event()
+BH_LOCK = threading.Lock()   # serializes blackhole DBus sends so the shutdown
+                             # zero can't be overtaken by an in-flight worker send
 
 # per-minute accumulators, flushed by the aggregator
 C = dict(keys=0, backspaces=0, clicks=0, scrolls=0, mouse_px=0.0,
@@ -264,19 +266,28 @@ def blackhole_strength(streak_min, cfg):
 def blackhole_send(s):
     """Best-effort push of a single strength value to the KWin effect over
     DBus. Silently a no-op when the effect isn't installed, KWin is
-    restarting, or the send otherwise fails."""
-    try:
-        subprocess.run(
-            ["dbus-send", "--session", "--dest=org.argus.blackhole",
-             "/BlackHole", "org.argus.blackhole.setStrength", f"double:{s:.3f}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
-    except Exception:
-        pass
+    restarting, or the send otherwise fails.
+
+    Serialized on BH_LOCK: two dbus-send processes competing at shutdown
+    (the periodic worker's last send vs. the final zero-strength send) must
+    not race, or the zero could land first and leave the hole stuck at a
+    stale nonzero strength."""
+    with BH_LOCK:
+        try:
+            subprocess.run(
+                ["dbus-send", "--session", "--dest=org.argus.blackhole",
+                 "/BlackHole", "org.argus.blackhole.setStrength", f"double:{s:.3f}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        except Exception:
+            pass
 
 def blackhole_worker():
     """Push strength to the KWin effect every 10 s over DBus.
     Silently a no-op when the effect isn't installed or KWin is restarting."""
     while not STOP.is_set():
+        if STOP.is_set():
+            break  # cheap pointless-send avoidance; BH_LOCK is the actual
+                   # correctness mechanism against the shutdown-zero race
         blackhole_send(blackhole_strength(STREAK, CFG))
         STOP.wait(10)
 

@@ -51,6 +51,33 @@ Dashboard: **http://localhost:8787**
 The whole page auto-refreshes every 20 s (and on tab focus); the green
 "live · updated Ns ago" indicator in the header shows data freshness.
 
+## Black hole
+
+When an unbroken active streak runs past `break_every_min`, a black hole
+opens in the middle of the main monitor and grows for the next
+`blackhole_ramp_min` minutes (default 15), gravitationally lensing
+everything on screen — the longer you refuse to take a break, the more of
+your desktop it eats. Take a real break (idle past `idle_reset_min`) and it
+collapses. Purely visual: input and windows are untouched.
+
+Implementation: a KWin compositor effect (`blackhole/`) fed by the tracker
+over DBus (`org.argus.blackhole`). Config: `blackhole_enabled`,
+`blackhole_ramp_min` in `config.json`.
+
+Build/install (once, after KWin upgrades rebuild the same way):
+
+    sudo apt install -y cmake extra-cmake-modules g++ kwin-dev qtbase5-dev \
+      libkf5config-dev libkf5coreaddons-dev libkf5windowsystem-dev \
+      libxcb1-dev libepoxy-dev
+    cd blackhole && mkdir -p build && cd build
+    cmake -DCMAKE_INSTALL_PREFIX=/usr .. && make && sudo make install
+    systemctl --user restart plasma-kwin_x11   # KWin holds the old .so — reconfigure alone won't pick up a rebuild
+
+Instant test:
+
+    dbus-send --session --dest=org.argus.blackhole /BlackHole \
+      org.argus.blackhole.setStrength double:0.7
+
 ## Break reminders
 
 After `break_every_min` (default 50) consecutive active minutes you get a

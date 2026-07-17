@@ -44,6 +44,7 @@ STOP = threading.Event()
 C = dict(keys=0, backspaces=0, clicks=0, scrolls=0, mouse_px=0.0,
          frames=0, present=0, blinks=0, brow=0.0, press=0.0, away=0, close=0,
          switches=0, chews=0)
+STREAK = 0                # live active-minute streak, mirrored by aggregator
 APP_SECONDS = {}          # app -> seconds, current minute
 LAST_INPUT = time.time()
 
@@ -273,7 +274,8 @@ def seed_streak():
     return streak
 
 def aggregator():
-    active_streak = seed_streak()
+    global STREAK
+    active_streak = STREAK = seed_streak()
     idle_run = 0
     last_reminder = 0.0
     while not STOP.is_set():
@@ -311,6 +313,7 @@ def aggregator():
                 if active_streak >= CFG["break_every_min"]:
                     log_event("break_taken", str(active_streak))
                 active_streak = 0
+        STREAK = active_streak
         if active_streak >= CFG["break_every_min"] and \
            time.time() - last_reminder >= CFG["snooze_min"] * 60:
             notify("Time for a break 🧘",
@@ -498,6 +501,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/summary":
             s = day_summary(date)
             s["analysis"] = heuristic_insights(s)
+            if date == time.strftime("%Y-%m-%d"):
+                s["streak_min"] = STREAK
             self._send(s)
         elif path == "/api/history":
             self._send(history())

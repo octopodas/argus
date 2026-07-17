@@ -12,9 +12,45 @@ scores and LLM-generated insights (local ollama).
 signal). Camera frames are processed in memory and discarded; only derived
 numbers (blinks, tension, presence, head-pose flags) reach the database.
 
-## Quick start
+## Install
 
-The app runs as a systemd user service (already installed):
+Requires Linux with X11 (`echo $XDG_SESSION_TYPE` must say `x11`) and Python 3.
+
+```bash
+# 1. System tools (window tracking + notifications)
+sudo apt install -y python3-venv xdotool x11-utils libnotify-bin
+
+# 2. Python environment (run from the repo directory)
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# 3. Try it once in the foreground (Ctrl-C to stop)
+.venv/bin/python tracker.py
+# → open http://localhost:8787
+
+# 4. Install as a systemd user service (starts on login)
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/activity-tracker.service <<EOF
+[Unit]
+Description=Activity Tracker
+
+[Service]
+ExecStart=$PWD/.venv/bin/python $PWD/tracker.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now activity-tracker
+```
+
+The MediaPipe face model (`face_landmarker.task`) ships with the repo — no
+download needed. Optional extras: [ollama](https://ollama.com) running locally
+for AI insights, and the [black hole](#black-hole) KWin effect (build steps
+below).
+
+## Quick start
 
 ```bash
 systemctl --user status activity-tracker     # check it's running

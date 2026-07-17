@@ -128,9 +128,17 @@ void BlackHoleEffect::paintScreen(int mask, const QRegion &region, ScreenPaintDa
 
     const QSize vs = effects->virtualScreenSize();
     const QRect hole = primaryScreenGeometry();
-    const QPointF c = QRectF(hole).center();
     const float radius = 0.16f * std::min(hole.width(), hole.height())
                        * std::pow(float(m_rendered), 0.7f);
+    // wandering drift: incommensurate Lissajous periods give a slow,
+    // never-repeating path; the margin keeps the hole plus its ring glow on
+    // the primary screen, so a bigger hole naturally roams a smaller area
+    const float margin = radius * 1.4f + 40.0f;
+    const float ax = std::max(0.0f, hole.width() / 2.0f - margin);
+    const float ay = std::max(0.0f, hole.height() / 2.0f - margin);
+    const QPointF c = QRectF(hole).center()
+        + QPointF(ax * std::sin(m_timeSec * 2.0 * M_PI / 210.0),
+                  ay * std::sin(m_timeSec * 2.0 * M_PI / 151.0));
 
     ShaderManager::instance()->pushShader(m_shader.get());
     m_shader->setUniform(GLShader::ModelViewProjectionMatrix, data.projectionMatrix());

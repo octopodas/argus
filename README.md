@@ -54,7 +54,7 @@ The whole page auto-refreshes every 20 s (and on tab focus); the green
 ## Black hole
 
 When an unbroken active streak runs past `break_every_min`, a black hole
-opens in the middle of the main monitor and grows for the next
+opens on the main monitor, wandering slowly across it, and grows for the next
 `blackhole_ramp_min` minutes (default 15), gravitationally lensing
 everything on screen — the longer you refuse to take a break, the more of
 your desktop it eats. Take a real break (idle past `idle_reset_min`) and it

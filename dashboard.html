@@ -114,6 +114,7 @@
   <h2>Settings</h2>
   <label>Break reminder every <input type="number" id="break_every_min" min="10"> min</label>
   <label>Re-remind (snooze) <input type="number" id="snooze_min" min="1"> min</label>
+  <label>Break timer resets after <input type="number" id="idle_reset_min" min="1"> min away</label>
   <label><input type="checkbox" id="camera_enabled"> Camera signals enabled</label>
   <label><input type="checkbox" id="notify"> Desktop notifications</label>
   <button onclick="saveCfg()">Save</button> <span id="saved" style="color:var(--ok)"></span>
@@ -182,7 +183,13 @@ async function load() {
   $('date').textContent = viewDate === today() ? 'today' : viewDate;
   const t = s.totals;
   // tile value colors mirror the activity-timeline palette
+  const rem = s.streak_min != null && cfg.break_every_min
+    ? Math.max(0, cfg.break_every_min - s.streak_min) : null;
   const tiles = [
+    ['Next break', rem == null ? '—' : rem === 0 ? 'now!' : `in ${fmtMin(rem)}`,
+     rem == null ? 'shown for today only'
+                 : `${fmtMin(s.streak_min)} streak · resets after ${cfg.idle_reset_min}m away`,
+     rem === 0 ? 'var(--bad)' : rem != null && rem <= 5 ? 'var(--warn)' : undefined],
     ['Active time', fmtMin(t.active_min), `${fmtMin(t.present_min)} on camera`, 'var(--ok)'],
     ['Away time', fmtMin(t.away_min ?? 0), `within ${fmtMin(t.span_min ?? 0)} workday span`, 'var(--acc)'],
     ['Focus', s.focus.score + '%', 'low-switching active minutes'],
@@ -195,6 +202,17 @@ async function load() {
   ];
   $('tiles').innerHTML = tiles.map(([l,v,d,c]) =>
     `<div class="card"><div class="l">${l}</div><div class="v"${c?` style="color:${c}"`:''}>${v}</div><div class="d">${d}</div></div>`).join('');
+  // when zoomed with the view at the leading edge, follow the current
+  // minute instead of letting new bars run off the right side; a view
+  // panned into the past (edge > 3 min behind now) is left alone
+  if (viewDate === today() && tlEnd < 1440) {
+    const nowMin = Math.floor((Date.now() - new Date(viewDate + 'T00:00:00')) / 60000);
+    if (nowMin > tlEnd && nowMin - tlEnd <= 3) {
+      const span = tlEnd - tlStart;
+      tlEnd = Math.min(1440, nowMin + 1);
+      tlStart = tlEnd - span;
+    }
+  }
   drawTimeline(s.minutes);
   drawHistory();
   $('analysis').innerHTML = md(s.analysis);
@@ -334,10 +352,12 @@ tlcv.onmouseleave = () => { $('tltip').style.display = 'none'; tlDrag = null; };
 
 async function loadCfg() {
   const c = await (await fetch('/api/config')).json();
-  for (const k of ['break_every_min','snooze_min']) $(k).value = c[k];
+  cfg = c;
+  for (const k of ['break_every_min','snooze_min','idle_reset_min']) $(k).value = c[k];
   for (const k of ['camera_enabled','notify']) $(k).checked = c[k];
   camOn = c.camera_enabled; renderCam();
 }
+let cfg = {};
 let camOn = true;
 function renderCam() {
   $('camtoggle').classList.toggle('on', !!camOn);
@@ -355,10 +375,12 @@ async function saveCfg() {
   const body = {
     break_every_min: +$('break_every_min').value,
     snooze_min: +$('snooze_min').value,
+    idle_reset_min: +$('idle_reset_min').value,
     camera_enabled: $('camera_enabled').checked,
     notify: $('notify').checked,
   };
   await fetch('/api/config', {method:'POST', body: JSON.stringify(body)});
+  Object.assign(cfg, body);
   camOn = body.camera_enabled; renderCam();
   $('saved').textContent = 'saved ✓';
   setTimeout(() => $('saved').textContent = '', 2000);
@@ -373,7 +395,7 @@ async function getInsights() {
   } finally { $('insBtn').disabled = false; }
 }
 
-load(); loadCfg();
+loadCfg().then(load);   // cfg first — the Next-break tile needs break_every_min
 setInterval(load, 20000);                       // fresh data every 20s
 setInterval(() => {                             // freshness indicator every 1s
   const s = Math.round((Date.now() - lastFetch) / 1000);

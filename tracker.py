@@ -275,7 +275,10 @@ def blackhole_send(s):
     with BH_LOCK:
         try:
             subprocess.run(
-                ["dbus-send", "--session", "--dest=org.argus.blackhole",
+                # --type=method_call is load-bearing: dbus-send defaults to
+                # --type=signal, which QtDBus never routes to the effect's slot
+                ["dbus-send", "--session", "--type=method_call",
+                 "--dest=org.argus.blackhole",
                  "/BlackHole", "org.argus.blackhole.setStrength", f"double:{s:.3f}"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
         except Exception:

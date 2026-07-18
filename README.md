@@ -33,13 +33,18 @@ mkdir -p ~/.config/systemd/user
 cat > ~/.config/systemd/user/activity-tracker.service <<EOF
 [Unit]
 Description=Activity Tracker
+# graphical-session.target (not default.target) so DISPLAY/XAUTHORITY are
+# imported — otherwise pynput/xdotool can't reach X and the service dies.
+After=graphical-session.target
+PartOf=graphical-session.target
 
 [Service]
 ExecStart=$PWD/.venv/bin/python $PWD/tracker.py
 Restart=on-failure
+RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 EOF
 systemctl --user daemon-reload
 systemctl --user enable --now activity-tracker

@@ -42,6 +42,9 @@ PartOf=graphical-session.target
 ExecStart=$PWD/.venv/bin/python $PWD/tracker.py
 Restart=on-failure
 RestartSec=5
+# Headroom over the 1024 default: if fds ever run out, accept() fails EMFILE
+# and serve_forever() spins a core instead of degrading. Buys time to notice.
+LimitNOFILE=8192
 
 [Install]
 WantedBy=graphical-session.target
@@ -181,7 +184,15 @@ Most settings are editable from the dashboard. `port`, `camera_fps` and
 ## System service
 
 Unit file: `~/.config/systemd/user/activity-tracker.service` — starts on
-login, restarts on failure.
+login, restarts on failure, `LimitNOFILE=8192`.
+
+Existing installs predate that limit — check and raise it:
+
+```bash
+grep "Max open files" /proc/$(systemctl --user show -p MainPID --value activity-tracker)/limits
+# 1024? add LimitNOFILE=8192 under [Service], then:
+systemctl --user daemon-reload && systemctl --user restart activity-tracker
+```
 
 ```bash
 systemctl --user status  activity-tracker   # health + PID

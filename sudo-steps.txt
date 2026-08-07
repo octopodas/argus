@@ -1,0 +1,7 @@
+# Black hole effect — the two sudo steps (run in a terminal, in order)
+
+# 1. Build dependencies (needed before Task 2's build)
+sudo apt install -y cmake extra-cmake-modules g++ kwin-dev qtbase5-dev libkf5config-dev libkf5coreaddons-dev libkf5windowsystem-dev libxcb1-dev libepoxy-dev
+
+# 2. Install the compiled effect (run AFTER I report the build succeeded; also rerun after any rebuild)
+cd /home/max/dev/mine/argus/blackhole/build && sudo make install

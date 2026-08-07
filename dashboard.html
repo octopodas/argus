@@ -43,6 +43,8 @@
   input[type=number] { width:70px; background:var(--bg); border:1px solid #2a2f3a; color:var(--ink); border-radius:6px; padding:4px 8px; }
   button { background:var(--acc); border:0; color:#08131d; font-weight:600; border-radius:8px; padding:8px 14px; cursor:pointer; }
   button:disabled { opacity:.5; }
+  #trktoggle { background:none; border:1px solid var(--bad); color:var(--bad); margin-bottom:10px; }
+  #trktoggle.on { border-color:var(--ok); color:var(--ok); }
   #analysis, #insights { font-size:14px; }
   #analysis p, #insights p { margin:8px 0; }
   #analysis ul, #insights ul, #analysis ol, #insights ol { margin:8px 0; padding-left:22px; }
@@ -112,6 +114,7 @@
 
 <section>
   <h2>Settings</h2>
+  <button id="trktoggle" onclick="toggleTracking()"></button>
   <label>Break reminder every <input type="number" id="break_every_min" min="10"> min</label>
   <label>Re-remind (snooze) <input type="number" id="snooze_min" min="1"> min</label>
   <label>Break timer resets after <input type="number" id="idle_reset_min" min="1"> min away</label>
@@ -355,14 +358,29 @@ async function loadCfg() {
   cfg = c;
   for (const k of ['break_every_min','snooze_min','idle_reset_min']) $(k).value = c[k];
   for (const k of ['camera_enabled','notify']) $(k).checked = c[k];
-  camOn = c.camera_enabled; renderCam();
+  camOn = c.camera_enabled; renderCam(); renderTrk();
+}
+function renderTrk() {
+  const on = cfg.tracking_enabled !== false;
+  $('trktoggle').classList.toggle('on', !!on);
+  $('trktoggle').textContent = on ? 'tracking ON' : 'tracking PAUSED';
+  $('trktoggle').title = on
+    ? 'Recording activity — click to pause everything (no minutes, no camera, no reminders)'
+    : 'Paused, nothing is recorded — click to resume';
+}
+async function toggleTracking() {
+  cfg.tracking_enabled = !cfg.tracking_enabled;
+  renderTrk();
+  await fetch('/api/config', {method:'POST', body: JSON.stringify({tracking_enabled: cfg.tracking_enabled})});
+  renderCam();   // pausing releases the camera too
 }
 let cfg = {};
 let camOn = true;
 function renderCam() {
-  $('camtoggle').classList.toggle('on', !!camOn);
-  $('camlabel').textContent = camOn ? 'camera ON' : 'camera off';
-  $('camtoggle').title = camOn
+  const live = camOn && cfg.tracking_enabled !== false;   // paused = camera released
+  $('camtoggle').classList.toggle('on', live);
+  $('camlabel').textContent = live ? 'camera ON' : camOn ? 'camera off (paused)' : 'camera off';
+  $('camtoggle').title = live
     ? 'Camera is live — click to release it for video calls'
     : 'Camera released (free for calls) — click to re-enable tracking';
 }

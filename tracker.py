@@ -5,7 +5,7 @@ Privacy: stores only counts and derived metrics. No key contents, no frames.
 Run: .venv/bin/python tracker.py          dashboard at http://localhost:8787
      .venv/bin/python tracker.py --selftest
 """
-import json, math, os, signal, sqlite3, subprocess, sys, threading, time, urllib.request
+import contextlib, json, math, os, signal, sqlite3, subprocess, sys, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -13,6 +13,7 @@ DB = os.path.join(BASE, "activity.db")
 CONFIG_PATH = os.path.join(BASE, "config.json")
 
 DEFAULTS = {
+    "tracking_enabled": True,   # master switch; off = record nothing at all
     "break_every_min": 50,      # remind after this many active minutes
     "snooze_min": 5,            # re-remind interval while break not taken
     "idle_reset_min": 3,        # this many idle minutes = break taken
@@ -52,10 +53,18 @@ STREAK = 0                # live active-minute streak, mirrored by aggregator
 APP_SECONDS = {}          # app -> seconds, current minute
 LAST_INPUT = time.time()
 
+@contextlib.contextmanager
 def db():
+    # close() in finally, not refcounting: 2026-08-07 the process wedged at
+    # 1024/1024 fds (~495 live connections) because `with conn:` only commits.
+    # accept() then failed EMFILE forever and serve_forever() spun a core.
     conn = sqlite3.connect(DB)
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        with conn:                      # commit on success, rollback on raise
+            yield conn
+    finally:
+        conn.close()
 
 def init_db():
     with db() as conn:
@@ -153,7 +162,7 @@ def camera_worker():
     pres_win = []
     last_rub = 0.0
     while not STOP.is_set():
-        if not CFG["camera_enabled"]:
+        if not (CFG["camera_enabled"] and CFG["tracking_enabled"]):
             if cap is not None:
                 cap.release(); cap = None
             time.sleep(2); continue
@@ -260,7 +269,7 @@ def blackhole_strength(streak_min, cfg):
     of blackhole_ramp_min. Drives the KWin black-hole effect; 0 = invisible,
     1 = classic full size, then keeps swelling to 3 (screen-devouring) if the
     break keeps being ignored."""
-    if not cfg.get("blackhole_enabled", True):
+    if not cfg.get("blackhole_enabled", True) or not cfg.get("tracking_enabled", True):
         return 0.0
     over = streak_min - cfg["break_every_min"]
     return max(0.0, min(3.0, over / max(1, cfg["blackhole_ramp_min"])))
@@ -305,8 +314,9 @@ def seed_streak():
     """Resume the active-minute streak from the DB so a service restart
     doesn't silently postpone break reminders."""
     cutoff = int(time.time()) - 6 * 3600
-    rows = dict(db().execute(
-        "SELECT ts, active FROM minutes WHERE ts > ?", (cutoff,)).fetchall())
+    with db() as conn:
+        rows = dict(conn.execute(
+            "SELECT ts, active FROM minutes WHERE ts > ?", (cutoff,)).fetchall())
     streak, idle = 0, 0
     t = int(time.time()) // 60 * 60 - 60
     while t > cutoff and idle < CFG["idle_reset_min"]:
@@ -318,6 +328,18 @@ def seed_streak():
         t -= 60
     return streak
 
+def drain_counters():
+    """Empty the per-minute accumulators and return their (row, apps) snapshot.
+    Input listeners keep counting while tracking is paused — the paused
+    aggregator drains and discards, so a resume can't dump a giant minute."""
+    with LOCK:
+        row = dict(C)
+        apps = dict(APP_SECONDS)
+        for k in C:
+            C[k] = 0.0 if isinstance(C[k], float) else 0
+        APP_SECONDS.clear()
+    return row, apps
+
 def aggregator():
     global STREAK
     active_streak = STREAK = seed_streak()
@@ -328,12 +350,11 @@ def aggregator():
         if STOP.is_set():
             break
         now = int(time.time())
-        with LOCK:
-            row = dict(C)
-            apps = dict(APP_SECONDS)
-            for k in C:
-                C[k] = 0 if not isinstance(C[k], float) else 0.0
-            APP_SECONDS.clear()
+        if not CFG["tracking_enabled"]:
+            drain_counters()                    # nothing is written while paused
+            active_streak = idle_run = STREAK = 0   # streak dies, so does the hole
+            continue
+        row, apps = drain_counters()
         had_input = row["keys"] + row["clicks"] + row["scrolls"] > 0 or row["mouse_px"] > 50
         present = row["frames"] > 0 and row["present"] / row["frames"] > 0.5
         active = 1 if (had_input or present) else 0
@@ -598,7 +619,12 @@ def selftest():
     assert blackhole_strength(80, cfg) == 2.0
     assert blackhole_strength(200, cfg) == 3.0
     assert blackhole_strength(80, dict(cfg, blackhole_enabled=False)) == 0.0
+    assert blackhole_strength(80, dict(cfg, tracking_enabled=False)) == 0.0
     assert blackhole_strength(51, dict(cfg, blackhole_ramp_min=0)) == 1.0
+    C["keys"] = 5; C["mouse_px"] = 1.5; APP_SECONDS["x"] = 3
+    row, apps = drain_counters()
+    assert (row["keys"], apps["x"]) == (5, 3) and not APP_SECONDS
+    assert C["keys"] == 0 and C["mouse_px"] == 0.0 and isinstance(C["mouse_px"], float)
     global DB
     DB = "/tmp/at_selftest.db"
     try:
@@ -606,7 +632,15 @@ def selftest():
         with db() as conn:
             conn.execute("INSERT OR REPLACE INTO minutes VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                          (0, 1, 0, 1, 0, 10.0, 6, 6, 1, 0.1, 0.1, 0, 0, 0, 1, 0))
-        assert db().execute("SELECT COUNT(*) FROM minutes").fetchone()[0] == 1
+        with db() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM minutes").fetchone()[0] == 1
+        # db() must not leak fds — this is what pinned a core for 8h on 2026-08-07
+        fds = lambda: len(os.listdir(f"/proc/{os.getpid()}/fd"))
+        before = fds()
+        for _ in range(50):
+            with db() as conn:
+                conn.execute("SELECT 1")
+        assert fds() <= before, f"db() leaked {fds() - before} fds over 50 opens"
     finally:
         os.unlink(DB)
     print("selftest ok")
